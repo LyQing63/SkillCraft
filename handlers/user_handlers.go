@@ -22,23 +22,36 @@ type Claims struct {
 
 // RegisterUserInput defines the input for the user registration.
 type RegisterUserInput struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
+	Username        string `json:"username" binding:"required"`
+	Email           string `json:"email" binding:"required,email"`
+	Password        string `json:"password" binding:"required,min=8"`
+	ConfirmPassword string `json:"confirmPassword" binding:"required,min=8"`
+}
+
+type RegisterUserOutput struct {
+	UserID   uint   `json:"user_id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
 }
 
 // RegisterUser handles new user registration.
 func RegisterUser(c *gin.Context) {
 	var input RegisterUserInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		Error(c, http.StatusBadRequest, "Invalid input")
+		return
+	}
+
+	// 检查密码和确认密码是否匹配
+	if input.Password != input.ConfirmPassword {
+		Error(c, http.StatusBadRequest, "Passwords do not match")
 		return
 	}
 
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		Error(c, http.StatusInternalServerError, "Could not hash password")
 		return
 	}
 
@@ -51,16 +64,15 @@ func RegisterUser(c *gin.Context) {
 
 	// Save user to the database
 	if result := database.DB.Create(&user); result.Error != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Username or email already exists"})
+		Error(c, http.StatusBadRequest, "User already exists or invalid input")
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"user_id":  user.ID,
-		"username": user.Username,
-		"email":    user.Email,
-		"message":  "User registered successfully",
-	})
+	Success(c, RegisterUserOutput{
+		UserID:   user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+	}, "User registered successfully")
 }
 
 // LoginUserInput defines the input for the user login.
@@ -69,17 +81,21 @@ type LoginUserInput struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type LoginUserOutput struct {
+	Token string `json:"token"`
+}
+
 // LoginUser handles user login.
 func LoginUser(c *gin.Context) {
 	var input LoginUserInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		Error(c, http.StatusBadRequest, "Invalid input")
 		return
 	}
 
 	var user models.User
 	if result := database.DB.Where("email = ?", input.Email).First(&user); result.Error != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		Error(c, http.StatusUnauthorized, "用户不存在")
 		return
 	}
 
@@ -87,7 +103,7 @@ func LoginUser(c *gin.Context) {
 	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password))
 	if err != nil {
 		// If the passwords do not match, return an unauthorized error
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		Error(c, http.StatusUnauthorized, "密码错误")
 		return
 	}
 
@@ -103,14 +119,13 @@ func LoginUser(c *gin.Context) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
+		Error(c, http.StatusInternalServerError, "Could not generate token")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"token":   tokenString,
-		"message": "Login successful",
-	})
+	Success(c, LoginUserOutput{
+		Token: tokenString,
+	}, "登录成功!")
 }
 
 // GetUser handles retrieving a user's basic information.
