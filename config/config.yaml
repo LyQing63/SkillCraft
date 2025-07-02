@@ -5,7 +5,7 @@ server:
 
 # JWT 密钥
 jwt:
-  secret: "your-secret-key"
+  secret: "r0c2V7FY2lRrHuEavYqQG4PaRDU5PA8CN6eYkLmJltI="
 
 db:
   host: localhost

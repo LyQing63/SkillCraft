@@ -1,18 +1,20 @@
 package handlers
 
 import (
+	"AILearning/config"
 	"AILearning/database"
 	"AILearning/models"
 	"net/http"
 	"time"
+
+	"AILearning/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// TODO: Move this to a secure configuration/environment variable
-var jwtKey = []byte("your_secret_key")
+var Response = &utils.ResponseHandler{}
 
 // Claims defines the JWT claims.
 type Claims struct {
@@ -38,20 +40,20 @@ type RegisterUserOutput struct {
 func RegisterUser(c *gin.Context) {
 	var input RegisterUserInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		Error(c, http.StatusBadRequest, "Invalid input")
+		Response.Error(c, http.StatusBadRequest, "Invalid input")
 		return
 	}
 
 	// 检查密码和确认密码是否匹配
 	if input.Password != input.ConfirmPassword {
-		Error(c, http.StatusBadRequest, "Passwords do not match")
+		Response.Error(c, http.StatusBadRequest, "Passwords do not match")
 		return
 	}
 
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		Error(c, http.StatusInternalServerError, "Could not hash password")
+		Response.Error(c, http.StatusInternalServerError, "Could not hash password")
 		return
 	}
 
@@ -64,11 +66,11 @@ func RegisterUser(c *gin.Context) {
 
 	// Save user to the database
 	if result := database.DB.Create(&user); result.Error != nil {
-		Error(c, http.StatusBadRequest, "User already exists or invalid input")
+		Response.Error(c, http.StatusBadRequest, "User already exists or invalid input")
 		return
 	}
 
-	Success(c, RegisterUserOutput{
+	Response.Success(c, RegisterUserOutput{
 		UserID:   user.ID,
 		Username: user.Username,
 		Email:    user.Email,
@@ -89,13 +91,13 @@ type LoginUserOutput struct {
 func LoginUser(c *gin.Context) {
 	var input LoginUserInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		Error(c, http.StatusBadRequest, "Invalid input")
+		Response.Error(c, http.StatusBadRequest, "Invalid input")
 		return
 	}
 
 	var user models.User
 	if result := database.DB.Where("email = ?", input.Email).First(&user); result.Error != nil {
-		Error(c, http.StatusUnauthorized, "用户不存在")
+		Response.Success(c, nil, "用户不存在")
 		return
 	}
 
@@ -103,7 +105,7 @@ func LoginUser(c *gin.Context) {
 	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password))
 	if err != nil {
 		// If the passwords do not match, return an unauthorized error
-		Error(c, http.StatusUnauthorized, "密码错误")
+		Response.Success(c, nil, "密码错误")
 		return
 	}
 
@@ -115,75 +117,81 @@ func LoginUser(c *gin.Context) {
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
 	}
-
+	var jwtKey = []byte(config.Cfg.JWT.Secret)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		Error(c, http.StatusInternalServerError, "Could not generate token")
+		Response.Error(c, http.StatusInternalServerError, "Could not generate token")
 		return
 	}
 
-	Success(c, LoginUserOutput{
+	Response.Success(c, LoginUserOutput{
 		Token: tokenString,
 	}, "登录成功!")
+}
+
+type GetUserOutput struct {
+	UserID   uint   `json:"user_id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
 }
 
 // GetUser handles retrieving a user's basic information.
 func GetUser(c *gin.Context) {
 	userID, exists := c.Get("userId")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in context"})
+		Response.Error(c, http.StatusUnauthorized, "User ID not found in context")
 		return
 	}
 
 	var user models.User
 	if result := database.DB.First(&user, userID); result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		Response.Success(c, nil, "用户不存在")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user_id":  user.ID,
-		"username": user.Username,
-		"email":    user.Email,
-	})
+	Response.Success(c, GetUserOutput{
+		UserID:   user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+	}, "User retrieved successfully")
 }
 
 // DeleteUser handles deleting a user and their profile.
 func DeleteUser(c *gin.Context) {
 	userID, exists := c.Get("userId")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in context"})
+		Response.Error(c, http.StatusUnauthorized, "User ID not found in context")
 		return
 	}
 
 	// Start a new transaction
 	tx := database.DB.Begin()
 	if tx.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+		Response.Error(c, http.StatusInternalServerError, "Failed to start transaction")
 		return
 	}
 
 	// Delete UserProfile first
 	if err := tx.Where("user_id = ?", userID).Delete(&models.UserProfile{}).Error; err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user profile"})
+		Response.Error(c, http.StatusInternalServerError, "Failed to delete user profile")
 		return
 	}
 
 	// Delete User
 	if err := tx.Delete(&models.User{}, userID).Error; err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+		Response.Error(c, http.StatusInternalServerError, "Failed to delete user")
 		return
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		Response.Error(c, http.StatusInternalServerError, "Failed to commit transaction")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "User and profile deleted successfully"})
+	Response.Success(c, nil, "User and profile deleted successfully")
 }
