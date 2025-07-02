@@ -17,7 +17,7 @@ func main() {
 	}
 
 	// 用 config.yaml 配置初始化数据库
-	database.InitDatabase(config.AppConfig.Database.DSN)
+	database.InitDatabase()
 
 	// 初始化 Gin 路由
 	router := gin.Default()
@@ -64,7 +64,7 @@ func main() {
 	}
 
 	// 拼接监听地址
-	serverAddr := config.AppConfig.Server.Host + ":" + config.AppConfig.Server.Port
+	serverAddr := config.Cfg.Server.Host + ":" + config.Cfg.Server.Port
 	log.Printf("Starting server on %s...\n", serverAddr)
 	if err := router.Run(serverAddr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

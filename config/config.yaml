@@ -3,10 +3,13 @@ server:
   host: "127.0.0.1"
   port: "8080"
 
-# 数据库配置
-database:
-  dsn: "root:zht20040723zht@tcp(127.0.0.1:3306)/ai_learning_db?charset=utf8mb4&parseTime=True&loc=Local"
-
 # JWT 密钥
 jwt:
   secret: "your-secret-key"
+
+db:
+  host: localhost
+  name: ai_learning_db
+  port: 3306
+  user: root
+  password: root

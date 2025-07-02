@@ -1,72 +1,79 @@
 package config
 
 import (
-	"io/ioutil"
-	"os"
+	"fmt"
 
-	"gopkg.in/yaml.v2"
+	"github.com/joho/godotenv"
+	"github.com/spf13/viper"
 )
 
-// ServerConfig 定义了服务器的配置
-type ServerConfig struct {
-	Host string `yaml:"host"`
-	Port string `yaml:"port"`
+type DBConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Name     string
 }
 
-// DatabaseConfig 定义了数据库的配置
-type DatabaseConfig struct {
-	DSN string `yaml:"dsn"`
+type Server struct {
+	Host string
+	Port string
 }
 
-// JWTConfig 定义了 JWT 的配置
 type JWTConfig struct {
-	Secret string `yaml:"secret"`
+	Secret string
 }
-
-// Config 是所有配置的根结构体
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	JWT      JWTConfig      `yaml:"jwt"`
+	Server Server
+	DB     DBConfig
+	JWT    JWTConfig
 }
 
-// AppConfig 是一个全局变量，用于存储应用程序的配置
-var AppConfig *Config
+var Cfg Config
 
-// LoadConfig 从 config.yaml 文件加载配置。
-// 如果文件不存在，它会创建一个默认的配置文件。
 func LoadConfig() error {
-	configPath := "config/config.yaml"
+	// 优先加载 .env 文件，将其中的变量设置到环境变量中
+	if err := godotenv.Load(); err != nil {
+		// 如果 .env 文件不存在，可以打印一条信息，但不要中断程序
+		// 因为环境变量可能已经通过其他方式设置了
+		fmt.Println("未找到 .env 文件，将依赖现有环境变量和配置文件:", err)
+	}
 
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		defaultConfig := Config{
-			Server:   ServerConfig{Host: "127.0.0.1", Port: "8080"},
-			Database: DatabaseConfig{DSN: "user:password@tcp(127.0.0.1:3306)/ai_learning_db?charset=utf8mb4&parseTime=True&loc=Local"},
-			JWT:      JWTConfig{Secret: "a-very-secret-key"},
-		}
+	// 设置 Viper 从环境变量中读取配置
+	// APP_DB_HOST -> db.host
+	viper.SetEnvPrefix("APP")
+	viper.AutomaticEnv()
 
-		yamlData, err := yaml.Marshal(&defaultConfig)
-		if err != nil {
-			return err
-		}
+	// 将 viper 的键绑定到环境变量
+	// 这样做可以确保 viper.Get("db.host") 能够正确获取到 APP_DB_HOST
+	viper.BindEnv("db.host", "APP_DB_HOST")
+	viper.BindEnv("db.port", "APP_DB_PORT")
+	viper.BindEnv("db.user", "APP_DB_USER")
+	viper.BindEnv("db.password", "APP_DB_PASSWORD")
+	viper.BindEnv("db.name", "APP_DB_NAME")
+	viper.BindEnv("jwt.secret", "APP_JWT_SECRET")
+	viper.BindEnv("server.host", "APP_SERVER_HOST")
+	viper.BindEnv("server.port", "APP_SERVER_PORT")
 
-		if err := os.MkdirAll("config", 0755); err != nil {
-			return err
-		}
+	// 设置配置文件的路径和名称，作为环境变量不存在时的备用方案
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("./config")
 
-		if err := ioutil.WriteFile(configPath, yamlData, 0644); err != nil {
-			return err
+	// 尝试读取配置文件，如果文件不存在也不会报错
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			// 配置文件未找到，可以忽略，因为我们将依赖环境变量
+			fmt.Println("未找到 config.yaml，将完全依赖环境变量。")
+		} else {
+			// 配置文件找到了但解析出错
+			return fmt.Errorf("无法解析配置文件: %w", err)
 		}
 	}
 
-	yamlFile, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		return err
-	}
-
-	err = yaml.Unmarshal(yamlFile, &AppConfig)
-	if err != nil {
-		return err
+	// 将所有配置解析到 Cfg 结构体中
+	if err := viper.Unmarshal(&Cfg); err != nil {
+		return fmt.Errorf("无法解析配置到结构体: %w", err)
 	}
 
 	return nil
