@@ -40,6 +40,7 @@ export default function RegisterPage() {
 
         // 模拟注册过程
         await new Promise((resolve) => setTimeout(resolve, 2000));
+        // TODO: 添加注册接口
 
         // 这里可以添加实际的注册逻辑
         console.log('注册信息:', formData);

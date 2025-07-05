@@ -22,7 +22,9 @@ func InitDatabase() {
 		cfgDB.User, cfgDB.Password, cfgDB.Host, cfgDB.Port, cfgDB.Name,
 	)
 
-	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true,
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -30,7 +32,7 @@ func InitDatabase() {
 	fmt.Println("Database connection successfully opened.")
 
 	// Migrate the schema
-	err = DB.AutoMigrate(&models.User{}, &models.UserProfile{}, &models.LearningTask{}, &models.LearningPlan{})
+	err = DB.AutoMigrate(&models.User{}, &models.UserProfile{}, &models.LearningTask{}, &models.LearningPlan{}, &models.ModelProviders{}, &models.Model{})
 	if err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}

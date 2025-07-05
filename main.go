@@ -39,6 +39,7 @@ func main() {
 		{
 			user.GET("/", handlers.GetUser)
 			user.DELETE("/", handlers.DeleteUser)
+			user.PUT("/:id/restore", handlers.RestoreUser)
 		}
 
 		profile := api.Group("/profile")

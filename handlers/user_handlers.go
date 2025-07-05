@@ -7,14 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"AILearning/utils"
-
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
-
-var Response = &utils.ResponseHandler{}
 
 // Claims defines the JWT claims.
 type Claims struct {
@@ -66,6 +62,7 @@ func RegisterUser(c *gin.Context) {
 
 	// Save user to the database
 	if result := database.DB.Create(&user); result.Error != nil {
+		// TODO:将重复应用错误独立出来，200返回
 		Response.Error(c, http.StatusBadRequest, "User already exists or invalid input")
 		return
 	}
@@ -194,4 +191,38 @@ func DeleteUser(c *gin.Context) {
 	}
 
 	Response.Success(c, nil, "User and profile deleted successfully")
+}
+
+// RestoreUser handles restoring a soft-deleted user.
+func RestoreUser(c *gin.Context) {
+	// 1. Get User ID from URL
+	id := c.Param("id")
+
+	// 2. Find User, including soft-deleted ones
+	var user models.User
+	if result := database.DB.Unscoped().First(&user, id); result.Error != nil {
+		if result.Error.Error() == "record not found" {
+			// 3. Handle "Not Found" Error
+			Response.Error(c, http.StatusNotFound, "User not found")
+		} else {
+			Response.Error(c, http.StatusInternalServerError, "Database query failed")
+		}
+		return
+	}
+
+	// 4. Check if the user is actually deleted
+	if !user.DeletedAt.Valid {
+		Response.Error(c, http.StatusConflict, "User is already active")
+		return
+	}
+
+	// 5. Restore User by setting DeletedAt to NULL
+	if updateResult := database.DB.Model(&user).Update("deleted_at", nil); updateResult.Error != nil {
+		// 6. Handle Update Error
+		Response.Error(c, http.StatusInternalServerError, "Failed to update user status")
+		return
+	}
+
+	// 7. Respond with Success
+	Response.Success(c, user, "User restored successfully")
 }
